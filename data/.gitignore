@@ -1,0 +1,8 @@
+# Ignore everything in this folder by default...
+*
+# ...but keep the structure and this file
+!.gitignore
+!raw/
+!raw/.gitkeep
+!processed/
+!processed/.gitkeep
