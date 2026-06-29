@@ -13,7 +13,7 @@ PDF_FILES = [
 ]
 
 RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
-PROCESSED_DIR = Path(__file__).resolve().parent.parent / "data" / "processed"
+RAW_TEXT_DIR = Path(__file__).resolve().parent.parent / "data" / "processed" / "raw_text"
 
 
 def extract_text(pdf_path: Path) -> str:
@@ -22,7 +22,7 @@ def extract_text(pdf_path: Path) -> str:
 
 
 def main() -> None:
-    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    RAW_TEXT_DIR.mkdir(parents=True, exist_ok=True)
 
     for filename in PDF_FILES:
         pdf_path = RAW_DIR / filename
@@ -32,7 +32,7 @@ def main() -> None:
 
         text = extract_text(pdf_path)
 
-        output_path = PROCESSED_DIR / f"{pdf_path.stem}_text.txt"
+        output_path = RAW_TEXT_DIR / f"{pdf_path.stem}_text.txt"
         output_path.write_text(text, encoding="utf-8")
         print(f"Extrait: {filename} -> {output_path.name}")
 
