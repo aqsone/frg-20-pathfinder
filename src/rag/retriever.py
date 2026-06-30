@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
 
 from .utils import call_with_retry
 
@@ -37,8 +36,7 @@ def embed_query(question: str, client: genai.Client, model: str = EMBEDDING_MODE
     response = call_with_retry(
         client.models.embed_content,
         model=model,
-        contents=[question],
-        config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY"),
+        contents=f"task: search result | query: {question}",
     )
     return response.embeddings[0].values
 
