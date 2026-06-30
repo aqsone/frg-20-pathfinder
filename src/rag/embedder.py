@@ -1,12 +1,11 @@
 import json
 import os
+import time
 from pathlib import Path
 
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
-
-import time
 
 PROCESSED_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "processed"
 CHUNKS_DIR = PROCESSED_DIR / "chunks"
@@ -16,57 +15,47 @@ load_dotenv()
 
 EMBEDDING_MODEL = "gemini-embedding-2"
 
+BATCH_SIZE = 50
+
+
 def embed_chunks(chunks: list[dict], client: genai.Client, model: str = EMBEDDING_MODEL) -> list[dict]:
-    """Prend une liste de chunks, extrait le texte, appelle l'API Gemini
-    par batchs et ajoute le vecteur dans une nouvelle clé 'embedding'.
-    Gère les limites de taux (Rate Limits) via un système de retry.
-    """
     if not chunks:
         return []
 
-    texts = [chunk["text"] for chunk in chunks]
-    embeddings = []
+    total = len(chunks)
+    total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
+    print(f"  -> Début du traitement : {total} chunks en {total_batches} batch(s).")
 
-    batch_size = 50
-    total_batches = (len(texts) + batch_size - 1) // batch_size
-    
-    print(f"  -> Début du traitement : {len(texts)} chunks découpés en {total_batches} batch(s).")
+    embedded_chunks = []
+    for i in range(0, total, BATCH_SIZE):
+        batch = chunks[i : i + BATCH_SIZE]
+        current_batch = i // BATCH_SIZE + 1
 
-    for i in range(0, len(texts), batch_size):
-        batch_texts = texts[i : i + batch_size]
-        current_batch = (i // batch_size) + 1
+        contents = [
+            types.Content(parts=[types.Part.from_text(text=f"title: none | text: {c['text']}")])
+            for c in batch
+        ]
 
         success = False
         while not success:
             try:
-                response = client.models.embed_content(
-                    model=model,
-                    contents=batch_texts,
-                    config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
-                )
-
-                batch_embeddings = [e.values for e in response.embeddings]
-                embeddings.extend(batch_embeddings)
-                
+                response = client.models.embed_content(model=model, contents=contents)
+                for chunk, emb in zip(batch, response.embeddings):
+                    ec = chunk.copy()
+                    ec["embedding"] = emb.values
+                    embedded_chunks.append(ec)
                 print(f"  -> [OK] Batch {current_batch}/{total_batches} traité.")
                 success = True
 
             except Exception as e:
                 if "429" in str(e):
-                    print(f"  -> [!] Quota atteint (Batch {current_batch}). Mise en pause de 60 secondes...")
+                    print(f"  -> [!] Quota atteint (Batch {current_batch}). Pause de 60 secondes...")
                     time.sleep(60)
                 else:
                     raise e
 
         if current_batch < total_batches:
-            print("  -> Pause d'espacement de 5 secondes...")
             time.sleep(5)
-
-    embedded_chunks = []
-    for chunk, embedding in zip(chunks, embeddings):
-        embedded_chunk = chunk.copy()
-        embedded_chunk["embedding"] = embedding
-        embedded_chunks.append(embedded_chunk)
 
     return embedded_chunks
 
@@ -91,8 +80,12 @@ def main() -> None:
         output_path = EMBEDDINGS_DIR / f"{doc_name}_embeddings.jsonl"
 
         if output_path.exists():
-            print(f"Cache trouvé pour {doc_name} ({output_path.name}). Passage au suivant.")
-            continue
+            n_chunks = sum(1 for l in chunk_path.open(encoding="utf-8") if l.strip())
+            n_embedded = sum(1 for l in output_path.open(encoding="utf-8") if l.strip())
+            if n_chunks == n_embedded:
+                print(f"Cache OK pour {doc_name} ({n_embedded}/{n_chunks} chunks). Passage au suivant.")
+                continue
+            print(f"Cache invalide pour {doc_name} ({n_embedded}/{n_chunks} chunks). Recalcul...")
 
         print(f"Calcul des embeddings pour {chunk_path.name}...")
 
